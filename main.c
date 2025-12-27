@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#if LIBSWRESAMPLE_VERSION_MAJOR <= 3
+#define LEGACY_LIBRESAMPLE
+#endif
+
 #define MINIAUDIO_IMPLEMENTATION
 #include "libs/miniaudio.h"
 
@@ -142,12 +146,17 @@ void *decoder_place(void *arg){
   SwrContext *swrCTX = NULL;
   AudioInfo *inf = streamCTX->inf;
 
+#ifdef LEGACY_LIBRESAMPLE
   swrCTX = swr_alloc_set_opts(swrCTX,
     inf->channel_layout, inf->sample_fmt, inf->sample_rate,
     codecCTX->channel_layout, codecCTX->sample_fmt, codecCTX->sample_rate,
     0, NULL
   );
-
+#else
+  swr_alloc_set_opts2(&swrCTX, &codecCTX->ch_layout, inf->sample_fmt,
+                      inf->sample_rate, &codecCTX->ch_layout,
+                      codecCTX->sample_fmt, codecCTX->sample_rate, 0, NULL);
+#endif
   if (!swrCTX || swr_init(swrCTX) < 0 ){
     swr_free(&swrCTX);
   }
@@ -206,7 +215,7 @@ void stream_play(StreamContext *streamCTX){
   AudioInfo *inf = streamCTX->inf;
   int capacity = (inf->sample_rate) * (inf->channels) * (inf->sample_fmt_bytes) * 2;
   streamCTX->buf = audio_buffer_create(capacity);
-  
+
   ma_device_config miniaudio_config = ma_device_config_init(ma_device_type_playback);
   ma_device device;
 
@@ -300,13 +309,17 @@ int start_check(const char *filename){
 
   enum AVSampleFormat input_sample_fmt = codecCTX->sample_fmt;
   enum AVSampleFormat output_sample_fmt = input_sample_fmt;
-  
+
   if (av_sample_fmt_is_planar(input_sample_fmt) == 1 ){
     output_sample_fmt = get_interleaved(input_sample_fmt);
   }
 
   inf.audioStream = audioStream;
+#ifdef LEGACY_LIBRESAMPLE
   inf.channels = codecCTX->channels;
+#else
+  inf.channels = codecCTX->ch_layout.nb_channels;
+#endif
   inf.sample_rate = codecCTX->sample_rate;
   inf.sample_fmt = output_sample_fmt;
   inf.sample_fmt_bytes = av_get_bytes_per_sample(inf.sample_fmt);
