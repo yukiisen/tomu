@@ -218,6 +218,7 @@ void *decoder_place(void *arg){
             int bytes = samples * inf->ch * inf->sample_fmt_bytes;
             audio_buffer_write(streamCTX->buf, data[0], bytes);
           }
+          free(data_conv);
         } else{
           int bytes = frame->nb_samples * inf->ch * inf->sample_fmt_bytes;
           audio_buffer_write(streamCTX->buf, *frame->data, bytes);
@@ -337,7 +338,7 @@ int scan_now(const char *filename){
     inf.ch_layout = codecCTX->channel_layout;
   #else
     inf.ch = codecCTX->ch_layout.nb_channels;
-    av_channel_layout_default(&ch_layout, inf.ch)
+    inf.ch_layout = codecCTX->ch_layout;
   #endif
 
   inf.sample_rate = codecCTX->sample_rate;
