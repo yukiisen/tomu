@@ -20,8 +20,9 @@ int main(int argc, char *argv[]){
       scan_now(filename);
     }
   } else if (strcmp("shuffle-loop", command) == 0){
-    shuffle(filename);
-
+    while (1){
+      shuffle(filename);
+    }
   } else if (strcmp("version", command) == 0 ){
     printf("%s\n", PROG_VER);
 
