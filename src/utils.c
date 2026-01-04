@@ -2,7 +2,7 @@
 #include <libavformat/avformat.h>
 #include <libavcodec/codec.h>
 
-#include "other.h"
+#include "utils.h"
 
 void cleanUP(AVFormatContext *fmtCTX, AVCodecContext *codecCTX){
   if (fmtCTX ) avformat_close_input(&fmtCTX);
@@ -10,7 +10,7 @@ void cleanUP(AVFormatContext *fmtCTX, AVCodecContext *codecCTX){
 }
 
 int shinu_now(const char *msg, AVFormatContext *fmtCTX, AVCodecContext *codecCTX){
-  fprintf(stderr, "F: %s\n", msg);
+  fprintf(stderr, "[W]: %s\n", msg);
 
   cleanUP(fmtCTX, codecCTX);
 
@@ -57,20 +57,3 @@ void die(const char *fmt, ...)
 	exit(1);
 }
 
-void help(){
-  printf(
-    "Usage: tomu [COMMAND] [PATH]\n"
-    " Commands:\n\n"
-
-    "   loop            : loop same sound\n"
-    "   shuffle-loop    : select random file audio and loop\n"
-    "   version         : show version of program\n"
-    "   help            : show help message\n"
-
-    "\nkeys:\n"
-    " p = pause/resume\n"
-    " q = quit\n"
-
-    "\nExample: tomu loop [FILE.mp3]\n"
-  );
-}

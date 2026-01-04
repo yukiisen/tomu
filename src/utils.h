@@ -1,11 +1,10 @@
-#include <libavformat/avformat.h>
+#ifndef UTILS_H
+#define UTILS_H
 
-#ifndef OTHER_H
-#define OTHER_H
+#include <libavformat/avformat.h>
 
 void cleanUP(AVFormatContext *fmtCTX, AVCodecContext *codecCTX);
 int shinu_now(const char *msg, AVFormatContext *fmtCTX, AVCodecContext *codecCTX);
-void help();
 
 int get_sec(double value);
 int get_min(double value);

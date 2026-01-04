@@ -11,6 +11,7 @@
   #define LEGACY_LIBSWRSAMPLE
 #endif
 
+// struct handle Playback
 typedef struct {
   int running;
   int paused;
@@ -31,6 +32,7 @@ typedef struct {
 
 } AudioBuffer;
 
+// struct for base information of audio file (codec)
 typedef struct {
   int audioStream;
   int ch;
@@ -47,6 +49,7 @@ typedef struct {
 } AudioInfo;
 
 
+// struct for point context used in another functions (needed)
 typedef struct {
   AudioBuffer *buf;
   AudioInfo *inf;

@@ -8,7 +8,7 @@
 #include "socket.h"
 #include "backend.h"
 #include "control.h"
-#include "other.h"
+#include "utils.h"
 
 void cleanup_socket(int sig){
 	unlink(SOCKET_PATH);
@@ -48,7 +48,7 @@ void *run_socket(void *arg)
 		while ((n = recv(client, buf, sizeof(buf)-1, 0)) > 0) {
 			buf[n] = '\0';
 			if (!strncmp(buf, "q", 1)) die("");
-			if (!strncmp(buf, "p", 1)){
+			if (!strncmp(buf, " ", 1)){
 				if (state->paused)
 					playback_resume(state);
 				else
