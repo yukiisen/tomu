@@ -48,6 +48,7 @@ ma_format get_ma_format(enum AVSampleFormat value){
   }
 }
 
+// TODO: fix typo
 AudioBuffer *audio_buffer_crate(int capacity){
   AudioBuffer *buf = malloc(sizeof(AudioBuffer));
   buf->PCM_data = malloc(capacity);
@@ -311,15 +312,15 @@ void stream_audio(StreamContext *streamCTX){
 
 // This function for get information from a file
 // we only trying extract information & save values with used in stream_audio()
-int scan_now(const char *filename){
+int playback_run(const char *filename){
   AVFormatContext *fmtCTX = NULL;
   AVCodecContext *codecCTX = NULL;
 
   if (avformat_open_input(&fmtCTX, filename, NULL, NULL) < 0 )
-    return shinu_now("can't open container file format", NULL, NULL);
+	die("file: file type is not supported");
 
   if (avformat_find_stream_info(fmtCTX, NULL) < 0 )
-    return shinu_now("can't find any streams", fmtCTX, NULL);
+	die("ffmpeg: cannot find any streams");
 
   // he we get stream audio index from container
   int audioStream = -1;
@@ -332,7 +333,7 @@ int scan_now(const char *filename){
   }
 
   if (audioStream == -1 )
-    return shinu_now("can't get audioStream!", fmtCTX, NULL);
+	die("file: file type is not supported");
 
   // here we get the information about audio stream is codecParameters
   const AVCodecParameters *codecPAR = fmtCTX->streams[audioStream]->codecpar;
@@ -344,14 +345,14 @@ int scan_now(const char *filename){
   codecCTX = avcodec_alloc_context3(codecID);
 
   if (!codecCTX )
-    return shinu_now("can't allocate codec!", fmtCTX, NULL);
+    die("ffmpeg: cannot allocate codec!");
 
   // Copy audio specification to decoder
   avcodec_parameters_to_context(codecCTX, codecPAR);
 
   // initialize decoder with actual codec
   if (avcodec_open2(codecCTX, codecID, NULL) < 0)
-    return shinu_now("can't init decoder!", fmtCTX, codecCTX);
+    die("ffmpeg: cannot init decoder!");
 
   // Audio samples can be stored in two formats: PLANAR or INTERLEAVED
   // 
@@ -401,7 +402,7 @@ int scan_now(const char *filename){
     .state = &state,
   };
 
-  printf("Playing: %s\n", filename);
+  printf("Playing: %s\n",  filename);
   printf("%dHz, %dch, %s", inf.sample_rate, inf.ch, av_get_sample_fmt_name(inf.sample_fmt));
 
   // here we make everything inside this function

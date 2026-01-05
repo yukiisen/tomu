@@ -59,6 +59,6 @@ typedef struct {
 
 } StreamContext;
 
-int scan_now(const char *filename);
+int playback_run(const char *filename);
 
 #endif

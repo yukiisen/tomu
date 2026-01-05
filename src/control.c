@@ -1,5 +1,7 @@
+#include <errno.h>
 #include <stdio.h>
 #include <sys/poll.h>
+#include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -11,6 +13,7 @@
 
 #include "backend.h"
 #include "control.h"
+#include "utils.h"
 
 void help(){
   printf(
@@ -112,29 +115,33 @@ void playback_stop(PlayBackState *state){
   pthread_mutex_unlock(&state->lock);
 }
 
+void path_handle(const char *path){
+	struct stat st;
+	if (stat(path, &st)<0 )  goto defer;
+	if (S_ISDIR(st.st_mode)) shuffle(path);
+	if (S_ISREG(st.st_mode)) playback_run(path);
+	else goto defer;
+
+	return;
+defer:
+	die("FILE: %s",strerror(errno));
+}
+
 void shuffle(const char *path){
+  DIR *dir = opendir(path);
+  struct dirent *entry;
+  int count = 0;
   srand(time(NULL));
 
-  struct dirent *entry;
-
-  DIR *dir = opendir(path);
-  if (!dir ){
-    perror("F: dir");
-    exit(-1);
-  }
+  if (!dir ) goto defer;
   
-  int count = 0;
   while ((entry = readdir(dir)) != NULL ){
-    if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) continue;
-
+    if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) 
+		continue;
     count++;
   }
 
-  if (count == 0){
-    perror("F: files");
-    closedir(dir);
-    exit(-1);
-  }
+  if (count == 0) goto defer;
 
   int index_rand = rand() % count;
   rewinddir(dir);
@@ -142,13 +149,16 @@ void shuffle(const char *path){
   for (int i = 0; i <= index_rand;){
     entry = readdir(dir);
     if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) continue;
-
     if (i == index_rand){
       char filename[512];
       snprintf(filename, sizeof(filename), "%s/%s", path, entry->d_name);
-      scan_now(filename);
+      playback_run(filename);
       break;
     }
     i++;
   }
+
+defer:
+  closedir(dir);
+  die("FILE: %s",strerror(errno));
 }
