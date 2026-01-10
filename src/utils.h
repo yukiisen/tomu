@@ -4,7 +4,7 @@
 #include <libavformat/avformat.h>
 
 void cleanUP(AVFormatContext *fmtCTX, AVCodecContext *codecCTX);
-int shinu_now(const char *msg, AVFormatContext *fmtCTX, AVCodecContext *codecCTX);
+void path_handle(const char *path);
 
 int get_sec(double value);
 int get_min(double value);

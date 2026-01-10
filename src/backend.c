@@ -51,71 +51,113 @@ ma_format get_ma_format(enum AVSampleFormat value){
 
 AudioBuffer *audio_buffer_init(int capacity){
   AudioBuffer *buf = malloc(sizeof(AudioBuffer));
-  buf->PCM_data = malloc(capacity);
+
+  buf->pcm_data = malloc(capacity);
   buf->capacity = capacity;
-  buf->write_postion = 0;
-  buf->read_postion = 0;
-  buf->size = 0;
+  buf->write_pos = 0;     // Start writing at beginning
+  buf->read_pos = 0;      // Start reading from beginning
+  buf->filled = 0;        // Buffer starts empty
+
   pthread_mutex_init(&buf->lock, NULL);
-  pthread_cond_init(&buf->data_avaliable, NULL);
-  pthread_cond_init(&buf->space_avaliable, NULL);
+  pthread_cond_init(&buf->data_ready, NULL);
+  pthread_cond_init(&buf->space_free, NULL);
   return buf;
 }
 
 void audio_buffer_destroy(AudioBuffer *buf){
   if (buf ){
-    free(buf->PCM_data);
+    free(buf->pcm_data);
     pthread_mutex_destroy(&buf->lock);
-    pthread_cond_destroy(&buf->data_avaliable);
-    pthread_cond_destroy(&buf->space_avaliable);
+    pthread_cond_destroy(&buf->data_ready);
+    pthread_cond_destroy(&buf->space_free);
     free (buf);
   }
 }
 
-void audio_buffer_write(AudioBuffer *buf, uint8_t *data, int bytes_write){
+// WRITE AUDIO DATA TO BUFFER
+void audio_buffer_write(AudioBuffer *buf, uint8_t *audio_data, int data_size) {
+  // Step 1: Lock so only one thread can write at a time
   pthread_mutex_lock(&buf->lock);
-  while(buf->size + bytes_write > buf->capacity){
-    pthread_cond_wait(&buf->space_avaliable, &buf->lock);
+  
+  // Step 2: Wait if buffer doesn't have enough space
+  // filled + new_data must fit in total capacity
+  while (buf->filled + data_size > buf->capacity) {
+    pthread_cond_wait(&buf->space_free, &buf->lock);
   }
-
-  int chunk = buf->capacity - buf->write_postion;
-  if (chunk > bytes_write ){
-    chunk = bytes_write;
+  
+  // Step 3: How much space until end of buffer?
+  int space_until_end = buf->capacity - buf->write_pos;
+  
+  // Step 4: Check if all data fits before end
+  if (data_size <= space_until_end) {
+    // Case 1: All data fits without wrapping
+    memcpy(buf->pcm_data + buf->write_pos, audio_data, data_size);
+  } else {
+    // Case 2: Need to wrap around
+    // Part A: Fill until end of buffer
+    memcpy(buf->pcm_data + buf->write_pos, audio_data, space_until_end);
+    
+    // Part B: Wrap to beginning for remaining bytes
+    int remaining = data_size - space_until_end;
+    memcpy(buf->pcm_data, audio_data + space_until_end, remaining);
   }
-
-  memcpy(buf->PCM_data + buf->write_postion, data, chunk);
-  memcpy(buf->PCM_data, data + chunk, bytes_write - chunk);
-
-  buf->write_postion = (buf->write_postion + bytes_write) % buf->capacity;
-  buf->size += bytes_write;
-
-  pthread_cond_signal(&buf->data_avaliable);
-
+  
+  // Step 5: Update write position (wrap around if needed)
+  buf->write_pos = (buf->write_pos + data_size) % buf->capacity;
+  
+  // Step 6: Update how much data is in buffer
+  buf->filled += data_size;
+  
+  // Step 7: Signal that data is now available for reading
+  pthread_cond_signal(&buf->data_ready);
+  
+  // Step 8: Unlock for other threads
   pthread_mutex_unlock(&buf->lock);
 }
 
-void audio_buffer_read(AudioBuffer *buf, uint8_t *output, int bytes_read){
+// READ AUDIO DATA FROM BUFFER
+void audio_buffer_read(AudioBuffer *buf, uint8_t *output, int bytes_needed) {
+  // Step 1: Lock so only one thread can read at a time
   pthread_mutex_lock(&buf->lock);
-  while(buf->size == 0){
-    pthread_cond_wait(&buf->data_avaliable, &buf->lock);
+  
+  // Step 2: Wait if buffer is empty
+  while (buf->filled == 0) {
+    pthread_cond_wait(&buf->data_ready, &buf->lock);
   }
-
-  if (bytes_read > buf->size){
-    bytes_read = buf->size;
+  
+  // Step 3: Don't try to read more than what's available
+  int bytes_to_read = bytes_needed;
+  if (bytes_to_read > buf->filled) {
+    bytes_to_read = buf->filled;
   }
-
-  int chunk = buf->capacity - buf->read_postion;
-  if (chunk > bytes_read ){
-    chunk = bytes_read;
+  
+  // Step 4: How much data until end of buffer?
+  int data_until_end = buf->capacity - buf->read_pos;
+  
+  // Step 5: Check if all data we need is before end
+  if (bytes_to_read <= data_until_end) {
+    // Case 1: All data available without wrapping
+    memcpy(output, buf->pcm_data + buf->read_pos, bytes_to_read);
+  } else {
+    // Case 2: Need to wrap around
+    // Part A: Read until end of buffer
+    memcpy(output, buf->pcm_data + buf->read_pos, data_until_end);
+    
+    // Part B: Wrap to beginning for remaining bytes
+    int remaining = bytes_to_read - data_until_end;
+    memcpy(output + data_until_end, buf->pcm_data, remaining);
   }
-
-  memcpy(output, buf->PCM_data + buf->read_postion, chunk);
-  memcpy(output + chunk, buf->PCM_data, bytes_read - chunk);
-
-  buf->read_postion = (buf->read_postion + bytes_read) % buf->capacity;
-  buf->size -= bytes_read;
-
-  pthread_cond_signal(&buf->space_avaliable);
+  
+  // Step 6: Update read position (wrap around if needed)
+  buf->read_pos = (buf->read_pos + bytes_to_read) % buf->capacity;
+  
+  // Step 7: Update how much data is left in buffer
+  buf->filled -= bytes_to_read;
+  
+  // Step 8: Signal that space is now free for writing
+  pthread_cond_signal(&buf->space_free);
+  
+  // Step 9: Unlock for other threads
   pthread_mutex_unlock(&buf->lock);
 }
 
@@ -168,7 +210,7 @@ void *run_decoder(void *arg){
         continue;
       }
 
-      // frame take it as PCM samples (for used to miniaudio send to speaker for played)
+      // frame take it as PCM samples (for used to miniaudio send to speaker for a played)
       while (avcodec_receive_frame(codecCTX, frame) >= 0){
         // init duration
         double current_time = (double)total_samples_played / inf->sample_rate;
@@ -183,6 +225,13 @@ void *run_decoder(void *arg){
         // run this if plnar: convert from planar to interleaved
         if (swrCTX ){
           uint8_t *data_conv = malloc(frame->nb_samples * inf->ch * inf->sample_fmt_bytes);
+
+          if (!data_conv){
+            fprintf(stderr, "Error: Out of memory for audio convertion\n");
+            av_frame_unref(frame);
+            continue;
+          }
+
           uint8_t *data[1] = {data_conv};
 
           // start convert the samples
@@ -194,6 +243,7 @@ void *run_decoder(void *arg){
           if (samples > 0 ){
             // get how much bytes write from this (PCM samples)
             int bytes = samples * inf->ch * inf->sample_fmt_bytes;
+            // write in buffer
             audio_buffer_write(streamCTX->buf, data[0], bytes);
           }
           free(data_conv);
@@ -202,21 +252,25 @@ void *run_decoder(void *arg){
         } else{
           // get how much bytes write from this (PCM samples)
           int bytes = frame->nb_samples * inf->ch * inf->sample_fmt_bytes;
-          audio_buffer_write(streamCTX->buf, *frame->data, bytes);
+          // write in buffer
+          audio_buffer_write(streamCTX->buf, frame->data[0], bytes);
         }
         av_frame_unref(frame);
       }
     }
     av_packet_unref(packet);
 
+
     pthread_mutex_lock(&state->lock);
     while (state->paused){
-      pthread_cond_wait(&state->waitKudasai, &state->lock);
+      pthread_cond_wait(&state->wait_cond, &state->lock);
     }
     pthread_mutex_unlock(&state->lock);
 
     if (!state->running) break;
   }
+
+  printf("\n");
 
   if (swrCTX ) swr_free(&swrCTX);
   av_frame_free(&frame);
@@ -229,22 +283,30 @@ void ma_dataCallback(ma_device *ma_config, void *output, const void *input, ma_u
   StreamContext *streamCTX = (StreamContext*)ma_config->pUserData;
   AudioInfo *inf = streamCTX->inf;
   PlayBackState *state = streamCTX->state;
+  
+  // Get volume safely
+  float current_volume;
+  pthread_mutex_lock(&state->lock);
+  current_volume = state->volume;
+  pthread_mutex_unlock(&state->lock);
+  
+  // Check paused state
+  pthread_mutex_lock(&state->lock);
 
-  // check if audio is paused
-  pthread_mutex_lock(&streamCTX->state->lock);
+  while (state->paused) {
+    pthread_cond_wait(&state->wait_cond, &state->lock);
+  }
 
-  while (streamCTX->state->paused)
-    pthread_cond_wait(&streamCTX->state->waitKudasai, &streamCTX->state->lock);
-
-  pthread_mutex_unlock(&streamCTX->state->lock);
-
-  // see how much bytes needed by speaker to work
+  pthread_mutex_unlock(&state->lock);
+  
+  // Read audio data
   int bytes = frameCount * inf->ch * inf->sample_fmt_bytes;
   audio_buffer_read(streamCTX->buf, output, bytes);
-
-  if (state->volume != 1.00f)
-    ma_apply_volume_factor_pcm_frames(output, frameCount, inf->ma_fmt, inf->ch, state->volume);
-
+  
+  // Apply volume (already have safe copy)
+  if (current_volume != 1.00f) {
+    ma_apply_volume_factor_pcm_frames(output, frameCount, inf->ma_fmt, inf->ch, current_volume);
+  }
 }
 
 // init mini audio config before used
@@ -281,7 +343,7 @@ void stream_audio(StreamContext *streamCTX){
   if (ma_device_init(NULL, &ma_config, &device) != MA_SUCCESS ){
     audio_buffer_destroy(streamCTX->buf);
     pthread_mutex_destroy(&state->lock);
-    pthread_cond_destroy(&state->waitKudasai);
+    pthread_cond_destroy(&state->wait_cond);
     return;
   }
 
@@ -294,24 +356,22 @@ void stream_audio(StreamContext *streamCTX){
   ma_device_start(&device);
   pthread_join(decoder_thread, NULL);
 
-  // playback_stop(state);
-
-  // when end
-  // pthread_join(control_thread, NULL);
-  // pthread_join(sock_thread, NULL);
 
   // audio is end now must off all thing (I'll keep this it's funny)
   // cleanup after playback finishes
+  pthread_cancel(control_thread);
+  pthread_cancel(sock_thread);
+
   ma_device_stop(&device);
   ma_device_uninit(&device);
   audio_buffer_destroy(streamCTX->buf);
   pthread_mutex_destroy(&state->lock);
-  pthread_cond_destroy(&state->waitKudasai);
+  pthread_cond_destroy(&state->wait_cond);
   return;
 }
 
 // This function for get information from a file
-// we only trying extract information & save values with used in stream_audio()
+// first trying extract information & save values with used in stream_audio()
 int playback_run(const char *filename){
   AVFormatContext *fmtCTX = NULL;
   AVCodecContext *codecCTX = NULL;
@@ -319,10 +379,10 @@ int playback_run(const char *filename){
   av_log_set_level(AV_LOG_QUIET);
 
   if (avformat_open_input(&fmtCTX, filename, NULL, NULL) < 0 )
-	die("file: file type is not supported");
+    die("file: file type is not supported");
 
   if (avformat_find_stream_info(fmtCTX, NULL) < 0 )
-	die("ffmpeg: cannot find any streams");
+    die("ffmpeg: cannot find any streams");
 
   // he we get stream audio index from container
   int audioStream = -1;
@@ -378,7 +438,7 @@ int playback_run(const char *filename){
     .volume = 1.00f
   };
   pthread_mutex_init(&state.lock, NULL);
-  pthread_cond_init(&state.waitKudasai, NULL);
+  pthread_cond_init(&state.wait_cond, NULL);
 
   // Save Base information to AudioInfo struct
   AudioInfo inf = {
@@ -397,7 +457,7 @@ int playback_run(const char *filename){
     .ma_fmt = get_ma_format(output_sample_fmt),
   };
 
-  // Pointer Contexts for used another functions
+  // Pointer Contexts for used in an another functions
   StreamContext streamCTX = {
     .inf = &inf,
     .fmtCTX = fmtCTX,
@@ -406,7 +466,7 @@ int playback_run(const char *filename){
   };
 
   printf("Playing: %s\n",  filename);
-  printf("%dHz, %dch, %s\n", inf.sample_rate, inf.ch, av_get_sample_fmt_name(inf.sample_fmt));
+  printf("%.2dHz, %dch, %s\n", inf.sample_rate, inf.ch, av_get_sample_fmt_name(inf.sample_fmt));
 
   // play audio
   stream_audio(&streamCTX);

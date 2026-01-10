@@ -17,19 +17,19 @@ typedef struct {
   int paused;
   float volume;
   pthread_mutex_t lock;
-  pthread_cond_t waitKudasai;
+  pthread_cond_t wait_cond;
 
 } PlayBackState;
 
 typedef struct {
-  uint8_t *PCM_data;
-  int capacity;
-  int write_postion;
-  int read_postion;
-  int size;
-  pthread_mutex_t lock;
-  pthread_cond_t data_avaliable;
-  pthread_cond_t space_avaliable;
+  uint8_t *pcm_data;           // Audio data storage
+  int capacity;                // Total size in bytes
+  int write_pos;               // Where to write next
+  int read_pos;                // Where to read next  
+  int filled;                  // How many bytes are stored now
+  pthread_mutex_t lock;        // Protect from multiple threads
+  pthread_cond_t data_ready;   // Signal when data available
+  pthread_cond_t space_free;   // Signal when space available
 
 } AudioBuffer;
 

@@ -1,7 +1,6 @@
 #include <errno.h>
 #include <stdio.h>
 #include <sys/poll.h>
-#include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -28,6 +27,8 @@ void help(){
     "\nkeys:\n"
     " Space = pause/resume\n"
     " q = quit\n"
+    " A:UP = increase volume\n"
+    " A:DOWN = decrease volume\n"
 
     "\nExample: tomu loop [FILE.mp3]\n"
   );
@@ -69,8 +70,8 @@ void *handle_input(void *arg){
   };
 
   while (state->running){
-    // wait 100ms for input
-    int ret = poll(&pfd, 1, 100);
+    // wait 80ms for input
+    int ret = poll(&pfd, 1, 80);
 
     if (ret > 0 && (pfd.revents & POLLIN)) {
         char key_buf[4] = {0}; // for escape sequences
@@ -105,7 +106,7 @@ void *handle_input(void *arg){
       continue;
 
     else 
-      perror("[W] poll error");
+      perror("[F] poll error");
   }
 
   printf("\033[?25h\r"); // show cursor
@@ -115,6 +116,8 @@ void *handle_input(void *arg){
   return NULL;
 }
 
+// functions for playback
+// fn toggle pause/resume
 void playback_toggle(PlayBackState *state) {
     if (state->paused)
         playback_resume(state);
@@ -122,14 +125,33 @@ void playback_toggle(PlayBackState *state) {
         playback_pause(state);
 }
 
+// use playback_toggle unless you have a good reason to use this
+void playback_pause(PlayBackState *state){
+  pthread_mutex_lock(&state->lock);
+  state->paused = 1;
+  pthread_mutex_unlock(&state->lock);
+}
+
+// use playback_toggle unless you have a good reason to use this
+void playback_resume(PlayBackState *state){
+  pthread_mutex_lock(&state->lock);
+  state->paused = 0;
+  pthread_cond_broadcast(&state->wait_cond);
+  pthread_mutex_unlock(&state->lock);
+}
+
 void playback_stop(PlayBackState *state){
   pthread_mutex_lock(&state->lock);
   state->paused = 0;
   state->running = 0;
-  pthread_cond_broadcast(&state->waitKudasai);
+  pthread_cond_broadcast(&state->wait_cond);
   pthread_mutex_unlock(&state->lock);
 }
+// =================================================================
 
+
+// functions for handle a volume of playback audio
+// fn change value of a control volume
 void volume_increase(PlayBackState *state){
   pthread_mutex_lock(&state->lock);
   state->volume += 0.02f;
@@ -143,19 +165,7 @@ void volume_decrease(PlayBackState *state){
   if (state->volume < 0.00f) state->volume = 0.00f;
   pthread_mutex_unlock(&state->lock);
 }
-
-void path_handle(const char *path){
-	struct stat st;
-	if (stat(path, &st)<0 )  goto free;
-
-    if (S_ISDIR(st.st_mode)) shuffle(path);
-    else if (S_ISREG(st.st_mode)) playback_run(path);
-    else goto free;
-
-	return;
-free:
-	die("FILE: %s",strerror(errno));
-}
+// ===================================================================
 
 void shuffle(const char *path){
   DIR *dir = opendir(path);
