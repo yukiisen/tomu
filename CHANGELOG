@@ -1,3 +1,8 @@
+## 0.0.7_dirty - 2026-01-10
+- fixing the argument parsing first
+- restore previous Makefile behavior
+- improve playback control logic
+- add more comment
 ## 0.0.6_dirty - 2026-01-05
 - Volume control for playback
 - Improved playback control logic
