@@ -27,8 +27,8 @@ void help(){
     "\nkeys:\n"
     " Space = pause/resume\n"
     " q = quit\n"
-    " A:UP = increase volume\n"
-    " A:DOWN = decrease volume\n"
+    " ↑ = increase volume\n"
+    " ↓ = decrease volume\n"
 
     "\nExample: tomu loop [FILE.mp3]\n"
   );
@@ -73,6 +73,8 @@ void *handle_input(void *arg){
     // wait 80ms for input
     int ret = poll(&pfd, 1, 80);
 
+    if (!state->running) break;
+
     if (ret > 0 && (pfd.revents & POLLIN)) {
         char key_buf[4] = {0}; // for escape sequences
 
@@ -84,7 +86,7 @@ void *handle_input(void *arg){
         // check if we have an escape sequence and ready bytes.
         if (key_buf[0] == '\x1b') {
             // TODO: remove the magic number
-            int ret = poll(&pfd, 1, 0); // we're not sure of the sequence's size and we don't want to block
+            int ret = poll(&pfd, 1, -1); // we're not sure of the sequence's size and we don't want to block
 
             if (ret < 0) {
                 perror("poll ecsape sequence");
@@ -97,13 +99,15 @@ void *handle_input(void *arg){
         // a hashmap should be used here but allocating mem here is overkill
         for (uint i = 0; i < kbds_len; i++) {
             if (strcmp(key_buf, keybindings[i].key) == 0) keybindings[i].handler(state); 
+
         }
 
-        if (!state->running) break; // leave if nothing is playing
+        if (!state->running) break; // leave if end or quit
     }
 
-    else if (ret == 0) 
+    else if (ret == 0) {
       continue;
+    }
 
     else 
       perror("[F] poll error");
@@ -118,7 +122,7 @@ void *handle_input(void *arg){
 
 // functions for playback
 // fn toggle pause/resume
-void playback_toggle(PlayBackState *state) {
+inline void playback_toggle(PlayBackState *state) {
     if (state->paused)
         playback_resume(state);
     else 
@@ -126,25 +130,25 @@ void playback_toggle(PlayBackState *state) {
 }
 
 // use playback_toggle unless you have a good reason to use this
-void playback_pause(PlayBackState *state){
+inline void playback_pause(PlayBackState *state){
   pthread_mutex_lock(&state->lock);
-  state->paused = 1;
+    state->paused = 1;
   pthread_mutex_unlock(&state->lock);
 }
 
 // use playback_toggle unless you have a good reason to use this
-void playback_resume(PlayBackState *state){
+inline void playback_resume(PlayBackState *state){
   pthread_mutex_lock(&state->lock);
-  state->paused = 0;
-  pthread_cond_broadcast(&state->wait_cond);
+    state->paused = 0;
+    pthread_cond_broadcast(&state->wait_cond);
   pthread_mutex_unlock(&state->lock);
 }
 
-void playback_stop(PlayBackState *state){
+inline void playback_stop(PlayBackState *state){
   pthread_mutex_lock(&state->lock);
-  state->paused = 0;
-  state->running = 0;
-  pthread_cond_broadcast(&state->wait_cond);
+    state->paused = 0;
+    state->running = 0;
+    pthread_cond_broadcast(&state->wait_cond);
   pthread_mutex_unlock(&state->lock);
 }
 // =================================================================
@@ -152,17 +156,17 @@ void playback_stop(PlayBackState *state){
 
 // functions for handle a volume of playback audio
 // fn change value of a control volume
-void volume_increase(PlayBackState *state){
+inline void volume_increase(PlayBackState *state){
   pthread_mutex_lock(&state->lock);
-  state->volume += 0.02f;
-  if (state->volume > 1.25f) state->volume = 1.25f;
+    state->volume += 0.02f;
+    if (state->volume > 1.26f) state->volume = 1.26f;
   pthread_mutex_unlock(&state->lock);
 }
 
-void volume_decrease(PlayBackState *state){
+inline void volume_decrease(PlayBackState *state){
   pthread_mutex_lock(&state->lock);
-  state->volume -= 0.02f;
-  if (state->volume < 0.00f) state->volume = 0.00f;
+    state->volume -= 0.02f;
+    if (state->volume < 0.00f) state->volume = 0.00f;
   pthread_mutex_unlock(&state->lock);
 }
 // ===================================================================
@@ -177,7 +181,8 @@ void shuffle(const char *path){
   
   while ((entry = readdir(dir)) != NULL ){
     if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) 
-		continue;
+      continue;
+
     count++;
   }
 
