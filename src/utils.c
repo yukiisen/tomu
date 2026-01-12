@@ -1,8 +1,10 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/codec.h>
+#include <stdio.h>
 #include <sys/stat.h>
 
+#include "backend.h"
 #include "control.h"
 #include "utils.h"
 
@@ -11,44 +13,21 @@ void cleanUP(AVFormatContext *fmtCTX, AVCodecContext *codecCTX){
   if (codecCTX ) avcodec_free_context(&codecCTX);
 }
 
-void path_handle(const char *path){
-	struct stat st;
-	if (stat(path, &st)<0 )  goto free;
+void path_handle(const char *path)
+{
+  struct stat st;
+
+  if (stat(path, &st) < 0 ) goto bad_path;
 
     if (S_ISDIR(st.st_mode)) shuffle(path);
     else if (S_ISREG(st.st_mode)) playback_run(path);
-    else goto free;
+    else goto bad_path;
 
-	return;
-free:
-	die("FILE: %s",strerror(errno));
+  return;
+
+bad_path:
+  die("File:");
 }
-
-
-// int shinu_now(const char *msg, AVFormatContext *fmtCTX, AVCodecContext *codecCTX){
-//   fprintf(stderr, "[T]: %s\n", msg);
-//
-//   cleanUP(fmtCTX, codecCTX);
-//
-//   return 1;
-// }
-
-int get_sec(double value){
-  return (int)value % 60;
-}
-
-int get_min(double value){
-  return ((int)value % 3600) / 60;
-}
-
-int get_hour(double value){
-  return (int)value / 3600;
-}
-
-// double get_progress_status(int *current_time, int *duration_time){
-//   return (j*current_time / *duration_time) * 100.0;
-//
-// }
 
 void verr(const char *fmt, va_list ap)
 {
@@ -77,4 +56,3 @@ void die(const char *fmt, ...)
 	va_end(ap);
 	exit(-1);
 }
-
