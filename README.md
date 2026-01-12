@@ -86,48 +86,7 @@ tomu /path/to/audio.mp3
 
 Tomu uses a sophisticated multi-threaded architecture for smooth audio playback:
 
-```
-
-    ┌──────────────┐
-    │  Audio File  │
-    └──────┬───────┘
-           │
-           ▼
-    ┌──────────────────┐
-    │  FFmpeg Decoder  │ ◄── Decoder Thread
-    │   (libavcodec)   │     (Reads & Decodes)
-    └──────┬───────────┘
-           │ Raw PCM Samples
-           ▼
-    ┌──────────────────┐
-    │ Sample Converter │ ◄── Format Conversion
-    │ (libswresample)  │     (Planar → Interleaved) if planar
-    └──────┬───────────┘
-           │
-           ▼
-    ┌────────────────────────────────┐
-    │   Circular Audio Buffer         │ ◄── Thread-Safe
-    │                                 │     Ring Buffer
-    │  [====WRITE==><==READ===]       │     (2 seconds capacity)
-    │                                 │
-    │  • Mutex-protected              │
-    │  • Condition variables          │
-    │  • Auto-wrapping to end samples │
-    └──────┬───────────────────────────┘
-           │
-           ▼
-    ┌──────────────────┐
-    │  MiniAudio API   │ ◄── Playback Thread
-    │  Audio Backend   │     (Outputs to Device)
-    └──────┬───────────┘
-           │
-           ▼
-    ┌──────────────────┐
-    │  Audio Hardware  │
-    │   (Speakers)     │
-    └──────────────────┘
-```
-
+Check the audio playback steps in the [architecture diagram](diagram.drawio)
 
 **i made this tool for learn c and need music player less usage ram for i make many session this will take usage ram.**
 ``
